@@ -263,6 +263,10 @@ npm run serve        # run the MCP server on stdio
 including rate-limit handling and rotation/mirror transforms. No token, no
 network, no browser, so it runs in CI on every push.
 
+## Related
+
+- [MCP Browser Extension](https://mcp-browser-extension.vercel.app) ([chrome-mcp](https://github.com/Mehmoodqureshi/chrome-mcp)): let Claude, Cursor or any MCP agent use the Chrome you are already logged into, with a deny-all domain allowlist.
+
 ## License
 
 MIT © Mehmood Ur Rehman Qureshi
