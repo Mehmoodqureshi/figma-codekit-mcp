@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // MCP server — exposes the figma-to-code pipeline as tools an agent can call.
 //
-//   claude mcp add figma -- npx -y @mehmoodqureshi/figma-mcp
+//   claude mcp add figma -- npx -y mcp-figma-to-code@latest
 //
 // Design notes:
 //
@@ -90,7 +90,7 @@ if (process.argv.includes('--install-browser')) {
 }
 
 /** Diagnostics to stderr — stdout belongs to the MCP protocol. */
-const note = (msg) => process.stderr.write(`[figma-mcp] ${msg}\n`);
+const note = (msg) => process.stderr.write(`[mcp-figma-to-code] ${msg}\n`);
 
 const text = (s) => ({ content: [{ type: 'text', text: s }] });
 const fail = (s) => ({ content: [{ type: 'text', text: s }], isError: true });
@@ -162,7 +162,8 @@ function roleCounts(node, acc = {}) {
 
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 
-const server = new McpServer({ name: 'figma-mcp', version: '0.1.0' });
+const { name, version } = readJson(path.join(ROOT, 'package.json'));
+const server = new McpServer({ name, version });
 
 // ---------------------------------------------------------------------------
 // figma_convert — Figma URL → IR + assets + HTML on disk. The deterministic pass.

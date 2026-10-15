@@ -1,4 +1,4 @@
-// Tests for the setup check (`figma-mcp --check`, src/mcp/doctor.js).
+// Tests for the setup check (`mcp-figma-to-code --check`, src/mcp/doctor.js).
 //
 // probeToken and runCheck run with a stubbed fetch, so no request reaches Figma
 // and no real token is needed. The last block spawns the real server binary with
@@ -99,7 +99,7 @@ console.log('runCheck');
   globalThis.fetch = saved.fetch;
 }
 
-console.log('figma-mcp --check (real binary)');
+console.log('mcp-figma-to-code --check (real binary)');
 {
   // realpath: macOS tmp is a symlink (/var -> /private/var) and the child reports its real cwd.
   const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'figma-mcp-check-')));
@@ -115,7 +115,7 @@ console.log('figma-mcp --check (real binary)');
 
   const r = run();
   assert(r.error === undefined && r.signal === null, '--check exits on its own (does not wait for an MCP host)');
-  assert(r.stdout.startsWith('figma-mcp '), 'report goes to stdout, starting with the version');
+  assert(r.stdout.startsWith('mcp-figma-to-code '), 'report goes to stdout, starting with the version');
   assert(r.stdout.includes(`cache     ${path.join(scratch, 'cache')}`), 'honours FIGMA_MCP_CACHE_DIR');
   if (!hasRootToken) {
     assert(r.status === 1, 'no token anywhere -> exit 1');

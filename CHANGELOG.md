@@ -1,3 +1,15 @@
+## 0.2.2 - 2026-10-15
+
+- Refresh runtime dependencies and require the patched MCP SDK.
+- Align GitHub repository links with `mcp-figma-to-code`.
+- Rename the npm package and command to `mcp-figma-to-code`. Install with
+  `npx -y mcp-figma-to-code@latest`.
+- Update setup examples and the server identity to the canonical package name.
+- Read the MCP handshake name and version from package.json instead of the
+  old hardcoded identity.
+- Keep existing tool names, settings and stored data compatible.
+- Publish future approved version tags through npm trusted publishing.
+
 ## 0.2.1 - 2026-09-25
 
 Setup can now be checked in one command, and the React and Next.js output

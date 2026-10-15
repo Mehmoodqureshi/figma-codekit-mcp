@@ -1,17 +1,17 @@
 {
-  "name": "@mehmoodqureshi/figma-mcp",
-  "mcpName": "io.github.Mehmoodqureshi/figma-mcp",
-  "version": "0.2.1",
+  "name": "mcp-figma-to-code",
+  "mcpName": "io.github.Mehmoodqureshi/mcp-figma-to-code",
+  "version": "0.2.2",
   "description": "Figma to pixel-perfect code, as an MCP server. Converts a frame to self-contained HTML deterministically, then closes the loop: renders your code in Chromium, pixel-diffs it against the Figma reference, and tells the agent exactly which elements are missing or misplaced.",
   "author": "Mehmood Ur Rehman Qureshi",
   "license": "MIT",
-  "homepage": "https://github.com/Mehmoodqureshi/figma-mcp#readme",
+  "homepage": "https://github.com/Mehmoodqureshi/mcp-figma-to-code#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Mehmoodqureshi/figma-mcp.git"
+    "url": "git+https://github.com/Mehmoodqureshi/mcp-figma-to-code.git"
   },
   "bugs": {
-    "url": "https://github.com/Mehmoodqureshi/figma-mcp/issues"
+    "url": "https://github.com/Mehmoodqureshi/mcp-figma-to-code/issues"
   },
   "type": "module",
   "publishConfig": {
@@ -24,7 +24,7 @@
     "./codegen": "./src/codegen/index.js"
   },
   "bin": {
-    "figma-mcp": "src/mcp/server.js"
+    "mcp-figma-to-code": "src/mcp/server.js"
   },
   "files": [
     "src/**/*.js",
@@ -69,7 +69,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "pixelmatch": "^6.0.0",
     "playwright": "^1.48.0",
     "pngjs": "^7.0.0",

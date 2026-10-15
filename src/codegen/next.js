@@ -130,7 +130,7 @@ export function generateNext(ir, opts = {}) {
 
     'README.md':
       `# ${title}\n\n` +
-      `Generated from a Figma frame by [figma-mcp](https://github.com/Mehmoodqureshi/figma-mcp).\n\n` +
+      `Figma frame converted to a Next.js project.\n\n` +
       '```bash\nnpm install\nnpm run dev\n```\n\n' +
       `\`app/${name}.jsx\` is the component — the same file the React option emits.\n` +
       `Images and vectors are inlined as data URIs, so it renders with no network.\n` +
