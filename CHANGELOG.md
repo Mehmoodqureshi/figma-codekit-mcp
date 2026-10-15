@@ -1,3 +1,9 @@
+## 0.2.3 - 2026-10-15
+
+- Rename the npm package and CLI to `figma-codekit-mcp`.
+- Update install commands, setup checks and the local site branding.
+- Align repository links and the MCP registry identifier with `figma-codekit-mcp`.
+
 ## 0.2.2 - 2026-10-15
 
 - Refresh runtime dependencies and require the patched MCP SDK.

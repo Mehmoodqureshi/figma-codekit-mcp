@@ -82,7 +82,7 @@ agent ──(edits the HTML)──▶ figma_verify again ──▶ converged
 ### Install
 
 ```bash
-claude mcp add figma-to-code --scope user -- node /absolute/path/to/mcp-figma-to-code/src/mcp/server.js
+claude mcp add figma-to-code --scope user -- node /absolute/path/to/figma-codekit-mcp/src/mcp/server.js
 claude mcp list   # → figma-to-code: ✔ Connected
 ```
 

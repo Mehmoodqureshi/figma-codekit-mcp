@@ -1,17 +1,17 @@
 {
-  "name": "mcp-figma-to-code",
-  "mcpName": "io.github.Mehmoodqureshi/mcp-figma-to-code",
-  "version": "0.2.2",
+  "name": "figma-codekit-mcp",
+  "mcpName": "io.github.Mehmoodqureshi/figma-codekit-mcp",
+  "version": "0.2.3",
   "description": "Figma to pixel-perfect code, as an MCP server. Converts a frame to self-contained HTML deterministically, then closes the loop: renders your code in Chromium, pixel-diffs it against the Figma reference, and tells the agent exactly which elements are missing or misplaced.",
   "author": "Mehmood Ur Rehman Qureshi",
   "license": "MIT",
-  "homepage": "https://github.com/Mehmoodqureshi/mcp-figma-to-code#readme",
+  "homepage": "https://github.com/Mehmoodqureshi/figma-codekit-mcp#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Mehmoodqureshi/mcp-figma-to-code.git"
+    "url": "git+https://github.com/Mehmoodqureshi/figma-codekit-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/Mehmoodqureshi/mcp-figma-to-code/issues"
+    "url": "https://github.com/Mehmoodqureshi/figma-codekit-mcp/issues"
   },
   "type": "module",
   "publishConfig": {
@@ -24,7 +24,7 @@
     "./codegen": "./src/codegen/index.js"
   },
   "bin": {
-    "mcp-figma-to-code": "src/mcp/server.js"
+    "figma-codekit-mcp": "src/mcp/server.js"
   },
   "files": [
     "src/**/*.js",

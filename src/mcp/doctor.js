@@ -1,4 +1,4 @@
-// Setup checks — what `npx -y mcp-figma-to-code@latest --check` runs.
+// Setup checks — what `npx -y figma-codekit-mcp@latest --check` runs.
 //
 // The MCP server has nothing to say until a host connects to it, so a fresh
 // install gives an agent (or a person) no way to tell whether it will work.
@@ -89,7 +89,7 @@ export async function runCheck({ tokenSource, cacheRoot, out = process.stdout } 
   const lines = [];
   const problems = [];
 
-  lines.push(`mcp-figma-to-code ${packageVersion()}`);
+  lines.push(`figma-codekit-mcp ${packageVersion()}`);
 
   const nodeMajor = Number(process.versions.node.split('.')[0]);
   const nodeOk = nodeMajor >= MIN_NODE_MAJOR;
@@ -117,7 +117,7 @@ export async function runCheck({ tokenSource, cacheRoot, out = process.stdout } 
     lines.push(`chromium  installed (${chrome.executable})`);
   } else {
     lines.push('chromium  missing — figma_convert and figma_inspect work, figma_verify will not');
-    problems.push('Run: npx -y mcp-figma-to-code@latest --install-browser');
+    problems.push('Run: npx -y figma-codekit-mcp@latest --install-browser');
   }
 
   if (cacheRoot) lines.push(`cache     ${cacheRoot}`);

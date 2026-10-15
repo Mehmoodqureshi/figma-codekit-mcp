@@ -1,6 +1,6 @@
-# mcp-figma-to-code
+# figma-codekit-mcp
 
-Upgrading from the previous scoped package: replace the package in your MCP client command with `npx -y mcp-figma-to-code@latest`. Existing environment settings and saved data remain compatible.
+Upgrading from an earlier package name: replace the package in your MCP client command with `npx -y figma-codekit-mcp@latest`. Existing environment settings and saved data remain compatible.
 
 **Figma → code that is actually checked against the design.**
 
@@ -102,7 +102,7 @@ export FIGMA_TOKEN=figd_REPLACE_WITH_YOUR_TOKEN
 Add it to Claude Code:
 
 ```bash
-claude mcp add figma --env FIGMA_TOKEN=$FIGMA_TOKEN -- npx -y mcp-figma-to-code@latest
+claude mcp add figma --env FIGMA_TOKEN=$FIGMA_TOKEN -- npx -y figma-codekit-mcp@latest
 ```
 
 Or for any MCP host that reads a JSON config:
@@ -112,7 +112,7 @@ Or for any MCP host that reads a JSON config:
   "mcpServers": {
     "figma": {
       "command": "npx",
-      "args": ["-y", "mcp-figma-to-code@latest"],
+      "args": ["-y", "figma-codekit-mcp@latest"],
       "env": { "FIGMA_TOKEN": "figd_REPLACE_WITH_YOUR_TOKEN" }
     }
   }
@@ -126,14 +126,14 @@ converges."*
 ### Check your setup
 
 ```bash
-FIGMA_TOKEN=$FIGMA_TOKEN npx -y mcp-figma-to-code@latest --check
+FIGMA_TOKEN=$FIGMA_TOKEN npx -y figma-codekit-mcp@latest --check
 ```
 
 It checks Node, whether a token was found (and where, never its value), whether
 Figma accepts it, and whether the Chromium `figma_verify` renders in is
 installed, then prints `READY` or what to fix. Exit code 0 means all three tools
 will work. If Chromium is missing (a skipped download, or CI), install it with
-`npx -y mcp-figma-to-code@latest --install-browser`.
+`npx -y figma-codekit-mcp@latest --install-browser`.
 
 ### Windows
 
@@ -143,7 +143,7 @@ server fails to start, point at the shim explicitly:
 ```json
 {
   "command": "cmd",
-  "args": ["/c", "npx", "-y", "mcp-figma-to-code@latest"]
+  "args": ["/c", "npx", "-y", "figma-codekit-mcp@latest"]
 }
 ```
 
@@ -218,7 +218,7 @@ Being straight about the edges, because they are Figma's, not bugs:
 The verify loop is framework-agnostic and does not need the MCP layer:
 
 ```js
-import { verifyLoop } from 'mcp-figma-to-code';
+import { verifyLoop } from 'figma-codekit-mcp';
 import fs from 'node:fs';
 
 const result = await verifyLoop({
@@ -242,8 +242,8 @@ string, pass `render: () => renderUrl('http://localhost:3000/preview', viewport)
 ## Develop
 
 ```bash
-git clone https://github.com/Mehmoodqureshi/mcp-figma-to-code.git
-cd mcp-figma-to-code
+git clone https://github.com/Mehmoodqureshi/figma-codekit-mcp.git
+cd figma-codekit-mcp
 npm install          # also downloads Chromium via postinstall
 npm test             # full chain against a mocked Figma API — no token, no network
 npm run example      # the verify loop end to end; watch the diff ratio fall

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// site/server.js — the local web front end for mcp-figma-to-code.
+// site/server.js — the local web front end for figma-codekit-mcp.
 //
 //   npm run site        then open http://localhost:5173
 //
@@ -321,7 +321,7 @@ process.on('SIGTERM', shutdown);
 
 server.listen(PORT, () => {
   const at = `http://localhost:${PORT}`;
-  console.log(`mcp-figma-to-code site  ${at}`);
+  console.log(`figma-codekit-mcp site  ${at}`);
   console.log(`  cache   ${CACHE_ROOT}`);
   console.log(`  token   ${process.env.FIGMA_TOKEN ? 'loaded' : 'MISSING - put one in .figma-token'}`);
   if (process.argv.includes('--open') && process.platform === 'darwin') spawn('open', [at]);
