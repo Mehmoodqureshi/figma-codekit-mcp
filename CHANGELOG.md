@@ -1,3 +1,7 @@
+## 0.2.4 - 2026-10-15
+
+- Validate trusted npm publishing from GitHub Actions for the canonical package.
+
 ## 0.2.3 - 2026-10-15
 
 - Rename the npm package and CLI to `figma-codekit-mcp`.
