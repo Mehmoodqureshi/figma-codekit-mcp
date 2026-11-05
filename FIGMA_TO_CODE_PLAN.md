@@ -81,7 +81,7 @@ Steps 1–6 give ~80% correct output reliably. Steps 7–8 fill gaps. Steps 9–
 | Headless browser | **Playwright** | Render generated code, screenshot it | ✅ `src/render.js` |
 | Pixel diff | `pixelmatch` | Compare render vs reference | ✅ `src/diff.js` |
 | Element matching | custom (bbox IoU) | Catch dropped/misplaced elements | ✅ `src/elementDiff.js` (true IoU via `data-ir-id`) |
-| VLM | claude-opus-4-8 (vision) | Generation + visual critic loop | ✅ `src/refine/*` (`createClaudeRefiner`) |
+| VLM | claude-opus-5-5 (vision) | Generation + visual critic loop | ✅ `src/refine/*` (`createClaudeRefiner`) |
 
 ---
 

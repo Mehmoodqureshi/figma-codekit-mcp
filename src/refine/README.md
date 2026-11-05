@@ -32,7 +32,7 @@ Run the live demo: `ANTHROPIC_API_KEY=sk-... node example/refine-example.js`
 
 Request shape:
 
-- **Model:** `claude-opus-4-8` (most capable Opus tier; override via `model`).
+- **Model:** `claude-opus-5-5` (the current Opus; override via `model`), adaptive thinking at effort `high`, with the server-side refusal fallback on (`fallbacks: false` to turn it off, e.g. on Bedrock or Vertex).
 - **Adaptive thinking** (`thinking: {type: "adaptive"}`) — matching a render against a design is real visual reasoning.
 - **Streaming** with `max_tokens: 64000` — a full HTML document can be large; streaming avoids HTTP timeouts.
 - **Three images** as base64 blocks: the Figma **target**, the **current render**, and the **pixel diff**
@@ -42,7 +42,9 @@ Request shape:
 
 | Option | Default | Purpose |
 |---|---|---|
-| `model` | `claude-opus-4-8` | Any vision-capable Claude model. |
+| `model` | `claude-opus-5-5` | Any vision-capable Claude model. |
+| `effort` | `high` | `low` / `medium` / `high` / `xhigh` / `max`. |
+| `fallbacks` | `true` | Server-side refusal fallback (Claude API only). |
 | `maxTokens` | `64000` | Output cap (streamed). |
 | `conventions` | self-contained HTML + flexbox rules | Injected into the system prompt — set your framework/style rules here. |
 | `client` | `new Anthropic()` | Inject a pre-built SDK client (or a mock for tests). |

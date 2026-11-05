@@ -11,6 +11,23 @@
 // expected one from the IR, the actual one from the rendered element.
 
 /**
+ * The box a browser reports for a rotated element: getBoundingClientRect() is the
+ * axis-aligned bounds of the TURNED shape, rotated about its centre (the CSS
+ * default transform-origin). Comparing that against the unrotated design box
+ * marks every rotated prop as misplaced even when it is drawn exactly right —
+ * a 788x1440 image turned 90° is reported as 1440x788.
+ */
+export function rotatedBounds(x, y, w, h, deg) {
+  if (!deg) return { x, y, w, h };
+  const r = (Number(deg) * Math.PI) / 180;
+  const c = Math.abs(Math.cos(r));
+  const s = Math.abs(Math.sin(r));
+  const bw = w * c + h * s;
+  const bh = w * s + h * c;
+  return { x: x + w / 2 - bw / 2, y: y + h / 2 - bh / 2, w: bw, h: bh };
+}
+
+/**
  * Flatten an IR tree into absolute (frame-relative) expected boxes.
  * IR child boxes are relative to their parent, so we accumulate offsets.
  * @param {import('./ir/schema.js').IRNode} node
@@ -24,7 +41,7 @@ export function flattenExpectedBoxes(node, offsetX = 0, offsetY = 0, out = []) {
     name: node.name,
     role: node.role,
     label: node.text?.content || node.component?.name || node.name,
-    box: { x, y, w: node.box.width, h: node.box.height },
+    box: rotatedBounds(x, y, node.box.width, node.box.height, node.style?.rotation),
   });
   for (const child of node.children || []) flattenExpectedBoxes(child, x, y, out);
   return out;

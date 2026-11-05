@@ -112,7 +112,15 @@ export async function renderHtml(html, opts = {}) {
   });
   const page = await context.newPage();
   try {
-    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+    // From a file URL when given, so relative assets (assets/<hash>.png) load;
+    // otherwise the self-contained string as before.
+    if (opts.url) await page.goto(opts.url, { waitUntil: 'load' });
+    else await page.setContent(html, { waitUntil: 'load' });
+    // A small document (assets as files) is laid out before its @import-ed
+    // webfont CSS has even arrived, and document.fonts.ready resolves early
+    // when no font has been requested yet — so wait for the network to go
+    // quiet first. Bounded: a dead font CDN degrades, it never hangs the loop.
+    await page.waitForLoadState('networkidle', { timeout: fontTimeoutMs }).catch(() => {});
     return await screenshotPage(page, { fullPage, settleMs, fontTimeoutMs });
   } finally {
     await context.close();
@@ -151,7 +159,15 @@ export async function renderHtmlWithBoxes(html, ids, rootId, opts = {}) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor });
   const page = await context.newPage();
   try {
-    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+    // From a file URL when given, so relative assets (assets/<hash>.png) load;
+    // otherwise the self-contained string as before.
+    if (opts.url) await page.goto(opts.url, { waitUntil: 'load' });
+    else await page.setContent(html, { waitUntil: 'load' });
+    // A small document (assets as files) is laid out before its @import-ed
+    // webfont CSS has even arrived, and document.fonts.ready resolves early
+    // when no font has been requested yet — so wait for the network to go
+    // quiet first. Bounded: a dead font CDN degrades, it never hangs the loop.
+    await page.waitForLoadState('networkidle', { timeout: fontTimeoutMs }).catch(() => {});
     const png = await screenshotPage(page, { fullPage, settleMs, fontTimeoutMs });
     const boxes = await page.evaluate(
       ({ ids, rootId }) => {
@@ -210,6 +226,16 @@ export async function renderUrl(url, opts = {}) {
   const page = await context.newPage();
   try {
     await page.goto(url, { waitUntil: 'load' });
+    await page.waitForLoadState('networkidle', { timeout: fontTimeoutMs }).catch(() => {});
+    if (opts.selector) {
+      // Compare one element of a real app (a card, a section) with its frame.
+      const el = page.locator(opts.selector).first();
+      await el.waitFor({ state: 'visible', timeout: opts.selectorTimeoutMs ?? 10_000 });
+      await waitForFonts(page, fontTimeoutMs);
+      await waitForImages(page, fontTimeoutMs);
+      if (settleMs > 0) await page.waitForTimeout(settleMs);
+      return await el.screenshot({ type: 'png' });
+    }
     return await screenshotPage(page, { fullPage, settleMs, fontTimeoutMs });
   } finally {
     await context.close();

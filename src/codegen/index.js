@@ -14,3 +14,6 @@ export { generateReact, generateComponentModules } from './react.js';
 export { generateNext } from './next.js';
 export { cssDeclarations, declToString, tokenToVar, collectTokenVars } from './cssgen.js';
 export { fontStylesheetUrls } from './html.js';
+export { externalizeAssets, copyAssetFiles, decodeDataUri } from './assetFiles.js';
+export { generateTokenFiles, extractTokens } from './tokens.js';
+export { toTailwind } from './tailwind.js';

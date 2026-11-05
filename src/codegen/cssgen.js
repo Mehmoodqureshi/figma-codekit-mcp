@@ -299,7 +299,19 @@ export function cssDeclarations(node, opts = {}) {
   if (L.mode === 'flex') {
     d.display = 'flex';
     d['flex-direction'] = L.direction;
-    if (L.gap) d.gap = node.tokens.itemSpacing ? tokenToVar(node.tokens.itemSpacing, px(L.gap)) : px(L.gap);
+    const mainGap = L.gap
+      ? node.tokens.itemSpacing
+        ? tokenToVar(node.tokens.itemSpacing, px(L.gap))
+        : px(L.gap)
+      : null;
+    if (L.wrap === 'wrap' && L.counterGap !== undefined && L.counterGap !== L.gap) {
+      // Split the two spacings: along the direction of travel it is the item
+      // spacing, between wrapped tracks it is counterAxisSpacing.
+      const [along, across] = L.direction === 'row' ? ['column-gap', 'row-gap'] : ['row-gap', 'column-gap'];
+      if (mainGap) d[along] = mainGap;
+      if (L.counterGap) d[across] = px(L.counterGap);
+    } else if (mainGap) d.gap = mainGap;
+    if (L.wrap === 'wrap' && L.alignContent) d['align-content'] = L.alignContent;
     if (L.padding) {
       d.padding = `${px(L.padding.top)} ${px(L.padding.right)} ${px(L.padding.bottom)} ${px(L.padding.left)}`;
     }

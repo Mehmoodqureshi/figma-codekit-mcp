@@ -120,8 +120,24 @@ export function computeContainerLayout(figmaNode) {
     justify: PRIMARY_TO_JUSTIFY[figmaNode.primaryAxisAlignItems] ?? 'flex-start',
     align: COUNTER_TO_ALIGN[figmaNode.counterAxisAlignItems] ?? 'flex-start',
     wrap: figmaNode.layoutWrap === 'WRAP' ? 'wrap' : 'nowrap',
+    // Wrapped Auto Layout has TWO spacings: itemSpacing between items in a
+    // track, counterAxisSpacing between the tracks themselves. CSS `gap` sets
+    // both at once, so emitting only itemSpacing pushes every wrapped track
+    // away by the item spacing — a 1440px "space between" row wraps its second
+    // track 1440px down, out of the frame. Unset means Figma never split them.
+    ...(figmaNode.layoutWrap === 'WRAP'
+      ? {
+          counterGap: figmaNode.counterAxisSpacing ?? figmaNode.itemSpacing ?? 0,
+          ...(ALIGN_CONTENT[figmaNode.counterAxisAlignContent]
+            ? { alignContent: ALIGN_CONTENT[figmaNode.counterAxisAlignContent] }
+            : {}),
+        }
+      : {}),
   };
 }
+
+/** counterAxisAlignContent (wrapped tracks) → CSS align-content. AUTO = packed at start. */
+const ALIGN_CONTENT = { SPACE_BETWEEN: 'space-between' };
 
 const SIZING = { FIXED: 'fixed', HUG: 'hug', FILL: 'fill' };
 

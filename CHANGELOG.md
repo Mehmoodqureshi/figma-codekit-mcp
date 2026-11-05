@@ -1,3 +1,48 @@
+## 0.3.0 - 2026-11-06
+
+- feat: **`figma_verify` checks any running page.** Pass `url` (and optionally
+  `selector`) to pixel-diff your own app against the Figma frame — any framework,
+  built by any tool — not only the HTML this server generates.
+- feat: **images are written as files by default.** Each distinct bitmap or vector
+  goes to `assets/<hash>.<ext>` once (and to `next/public/assets/` for the Next.js
+  export), so a photo-heavy frame produces a ~60 KB `generated.html` instead of a
+  20 MB one. `inlineAssets: true` restores the single self-contained file.
+- feat: **design tokens.** Every conversion writes `tokens.json` (W3C DTCG),
+  `tokens.css` and a Tailwind v4 `tailwind.theme.css`, collected from the colours,
+  fonts, font sizes, radii and spacing the frame actually uses.
+- feat: **Tailwind output.** `tailwind: true` emits the React / Next.js output as
+  Tailwind v4 classes (exact arbitrary values, theme tokens for colours and fonts)
+  and sets up Tailwind in the Next.js project. The HTML stays plain CSS for verify.
+- fix: **fails fast instead of hanging on Figma rate limits.** `figma_convert` no
+  longer sleeps through multi-minute cooldowns: it tries once (whole-file download
+  capped by `FIGMA_FILE_TIMEOUT_MS`, default 90 s), then builds from any cached
+  copy of the frame and marks it STALE CACHE, or says when the limit lifts.
+- fix: clearer 401/403 errors: a dead token, a file the account cannot open and a
+  spent Figma cost budget are now told apart (via `/v1/me`).
+- fix: verify waits for webfonts before the screenshot. A small HTML file could be
+  captured before its Google Fonts had loaded.
+- fix: **wrapped Auto Layout no longer pushes rows out of the frame.** Figma keeps
+  two spacings for a wrapping row — `itemSpacing` between items and
+  `counterAxisSpacing` between wrapped rows — but CSS `gap` sets both. A
+  "space-between" footer with a 1,439 px item spacing wrapped its second row
+  1,439 px down and the frame clipped it. Wrapped layouts now emit `column-gap` /
+  `row-gap` separately (plus `align-content` for SPACE_BETWEEN). On a real author
+  site this took verify from 148/162 elements with 9 over-clipped to 162/162.
+- fix: **rotated elements are measured correctly.** The element check compared a
+  rotated prop's unrotated design box with the browser's bounds of the turned
+  shape, so every rotated image counted as misplaced even when drawn exactly
+  right. Expected boxes are now rotated about their centre first.
+- fix: **verify matches Figma's downscaled references.** Figma exports a frame too
+  large for a 2x render at a smaller scale (a 1440x10490 frame came back at
+  1.49x). Verify now renders at the reference's actual scale instead of 2x, which
+  turned a meaningless 61% diff on such a frame into a real 9%.
+- chore: the optional refine loop defaults to `claude-opus-5-5` at effort `high`,
+  with the server-side refusal fallback on (`fallbacks: false` to disable).
+- chore: dependency updates (MCP SDK 1.32.2, Playwright 1.65, zod 4.6); `npm audit`
+  clean. The Anthropic SDK moves to 1.6, which sends API version `2026-10-21` and
+  is Apache-2.0 licensed; the refine code needed no changes for it. After upgrading run
+  `npx -y figma-codekit-mcp@latest --install-browser` once for the new Chromium.
+
 ## 0.2.4 - 2026-10-15
 
 - Validate trusted npm publishing from GitHub Actions for the canonical package.

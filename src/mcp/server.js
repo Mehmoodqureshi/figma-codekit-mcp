@@ -35,8 +35,12 @@ import {
   generateReact,
   generateNext,
   generateComponentModules,
+  externalizeAssets,
+  copyAssetFiles,
+  generateTokenFiles,
 } from '../codegen/index.js';
-import { renderHtml, renderHtmlWithBoxes, closeBrowser } from '../render.js';
+import { pathToFileURL } from 'node:url';
+import { renderHtml, renderHtmlWithBoxes, renderUrl, closeBrowser } from '../render.js';
 import { diffImages } from '../diff.js';
 import { buildCorrectionPrompt } from '../correction.js';
 import {
@@ -162,6 +166,66 @@ function roleCounts(node, acc = {}) {
 
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 
+/** First dir holding a usable cached frame (raw.json), or null. */
+function findCachedFrame(dirs) {
+  for (const d of [...new Set(dirs)]) {
+    if (d && fs.existsSync(path.join(d, 'raw.json'))) return d;
+  }
+  return null;
+}
+
+/**
+ * Turn a convert failure into a message that says what happened and what to do.
+ * A bare 403 from Figma can mean a dead token, no access to the file, or a
+ * spent cost budget; /v1/me (cheap, outside the file budgets) tells them apart.
+ */
+async function explainConvertFailure(err, url) {
+  const m = String(err?.message || err);
+  const cacheHint =
+    `Frames already in ${CACHE_ROOT} still work offline: figma_convert without refresh, ` +
+    `figma_verify and figma_inspect need no network.`;
+  if (err?.name === 'RateLimitError' || err?.name === 'FigmaBlockedError') {
+    const when = err.resetAt ? ` Try again after ${err.resetAt.toISOString().replace('T', ' ').slice(0, 16)} UTC.` : '';
+    return `figma_convert failed: Figma is rate-limiting this token. ${m}${when}\n${cacheHint}`;
+  }
+  if (err?.truncated || err?.timeout) {
+    return (
+      `figma_convert failed: ${m}\n→ This happens on very large files when Figma's faster per-node ` +
+      `endpoint is rate-limited and the whole file has to be downloaded instead. Try again later, ` +
+      `or link a smaller frame.\n${cacheHint}`
+    );
+  }
+  if (/\b40[13]\b/.test(m)) {
+    let who = null;
+    try {
+      const { fileKey } = parseFigmaUrl(url);
+      who = await new FigmaRestSource({ token: process.env.FIGMA_TOKEN, fileKey }).checkToken();
+    } catch {
+      /* fall through to the generic hint */
+    }
+    if (who && !who.ok && (who.status === 401 || who.status === 403)) {
+      return (
+        `figma_convert failed: Figma rejected the token itself (HTTP ${who.status} on /v1/me).\n` +
+        `→ Generate a new one in Figma → Settings → Security → Personal access tokens ` +
+        `(scope: File content, read-only) and replace it where it is stored. Run --check to confirm.`
+      );
+    }
+    if (who?.ok) {
+      return (
+        `figma_convert failed: ${m}\n→ The token works (signed in as ${who.handle}), but Figma refused ` +
+        `this file. Either the file is not shared with that account, or Figma's cost limit for this ` +
+        `file is spent (it lifts after a cooldown — often hours). Open the link in Figma while signed ` +
+        `in as ${who.handle} to check access.\n${cacheHint}`
+      );
+    }
+  }
+  const hint = m.includes('404')
+    ? '\n→ File key or node id not found. Check the URL points at a frame that still exists.'
+    : '';
+  return `figma_convert failed: ${m}${hint}`;
+}
+
+
 const { name, version } = readJson(path.join(ROOT, 'package.json'));
 const server = new McpServer({ name, version });
 
@@ -216,9 +280,23 @@ server.registerTool(
         .boolean()
         .default(false)
         .describe('Ignore the cache and re-fetch from the Figma API.'),
+      inlineAssets: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Embed images and vectors as data URIs (one self-contained file). Default false: they ' +
+            'are written once to assets/<hash>.<ext> and referenced, which keeps generated.html small.'
+        ),
+      tailwind: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Emit the React / Next.js output with Tailwind v4 classes instead of inline style objects ' +
+            '(colours and fonts use the generated @theme tokens). The HTML stays plain CSS for verify.'
+        ),
     },
   },
-  async ({ url, outDir, responsive, react, next: nextApp, refresh }) => {
+  async ({ url, outDir, responsive, react, next: nextApp, refresh, inlineAssets, tailwind }) => {
     try {
       const token = requireToken();
       const { fileKey, nodeId } = parseFigmaUrl(url);
@@ -233,13 +311,21 @@ server.registerTool(
       const dir = cacheDirFor(fileKey, nodeId, outDir);
       fs.mkdirSync(dir, { recursive: true });
       const p = (f) => path.join(dir, f);
-      const source = new FigmaRestSource({ token, fileKey });
+      // failFast: an interactive call answers from cache or fails in seconds,
+      // never sleeps through a multi-minute Figma cooldown.
+      const source = new FigmaRestSource({
+        token,
+        fileKey,
+        failFast: true,
+        fileTimeoutMs: Number(process.env.FIGMA_FILE_TIMEOUT_MS) || 90_000,
+      });
 
       // --- 1. Figma data (cached) ---
       let raw, variableMap, componentMap, referencePng;
       const rawPath = p('raw.json');
       const refPath = p('reference.png');
       let cachedRaw = !refresh && fs.existsSync(rawPath);
+      let servedStale = null;
 
       if (cachedRaw) {
         ({ raw, variableMap, componentMap } = readJson(rawPath));
@@ -266,8 +352,22 @@ server.registerTool(
           fs.writeFileSync(rawPath, JSON.stringify({ raw, variableMap, componentMap }));
           if (referencePng) fs.writeFileSync(refPath, referencePng);
         } catch (err) {
-          if (!raw) throw err; // nothing cached to fall back to
-          note(
+          if (!raw) {
+            // Nothing in this dir — but the same frame may be cached in the
+            // default cache dir (outDir differs, or refresh=true). A stale frame
+            // beats no frame; say clearly that it is stale and why.
+            const fallback = findCachedFrame([dir, cacheDirFor(fileKey, nodeId)]);
+            if (!fallback) throw err;
+            ({ raw, variableMap, componentMap } = readJson(path.join(fallback, 'raw.json')));
+            for (const f of ['reference.png', 'assets.json']) {
+              const from = path.join(fallback, f);
+              if (fallback !== dir && fs.existsSync(from) && !fs.existsSync(p(f))) fs.copyFileSync(from, p(f));
+            }
+            servedStale = `Figma did not answer (${err.message}), so this was built from the cached copy in ` +
+              `${fallback} (fetched ${fs.statSync(path.join(fallback, 'raw.json')).mtime.toISOString().slice(0, 16).replace('T', ' ')}). ` +
+              `Re-run with refresh=true later to pick up design changes.`;
+            note(servedStale);
+          } else note(
             `re-fetch failed (${err.message}); using the pre-transform cache. ` +
               `Rotations survive via the bounding box, but mirrored nodes cannot be ` +
               `recovered from it — re-run once Figma answers again.`
@@ -284,7 +384,9 @@ server.registerTool(
       const assetsPath = p('assets.json');
       const { imageFills, imageNodes, vectors } = collectAssets(ir);
       let assets = {};
-      if (!refresh && fs.existsSync(assetsPath)) {
+      // A stale (cached) frame keeps its cached assets too: re-exporting would hit
+      // the same Figma refusal and leave every image as a placeholder.
+      if ((!refresh || servedStale) && fs.existsSync(assetsPath)) {
         assets = readJson(assetsPath);
       } else {
         const tryExport = async (label, fn) => {
@@ -314,14 +416,36 @@ server.registerTool(
       }
       const embedded = Object.values(assets).filter(Boolean).length;
 
-      // --- 4. Codegen ---
-      const html = generateHtml(ir, { title: raw.name, assets, responsive });
+      // --- 4. Design tokens (always; cheap and useful even without Tailwind) ---
+      const tokenSet = generateTokenFiles(ir);
+      for (const [f, contents] of Object.entries(tokenSet.files)) fs.writeFileSync(p(f), contents);
+
+      // --- 5. Assets as files (default) or data URIs ---
+      let htmlAssets = assets;
+      let webAssets = assets; // what JSX / Next.js reference: /assets/<file> from public/
+      let assetFiles = [];
+      let assetBytes = 0;
+      if (!inlineAssets) {
+        const ext = externalizeAssets(assets, dir, { urlPrefix: 'assets/' });
+        htmlAssets = ext.map;
+        assetFiles = ext.files;
+        assetBytes = ext.bytes;
+        webAssets = Object.fromEntries(
+          Object.entries(ext.map).map(([k, v]) => [k, typeof v === 'string' && v.startsWith('assets/') ? `/${v}` : v])
+        );
+      }
+
+      // --- 6. Codegen ---
+      const html = generateHtml(ir, { title: raw.name, assets: htmlAssets, responsive });
       fs.writeFileSync(p('generated.html'), html);
       // A bound instance imports './components/<X>' — those modules have to be
       // written too or neither the JSX nor the Next.js project compiles.
       let modules = {};
       if (react) {
-        fs.writeFileSync(p('generated.jsx'), generateReact(ir, { assets, responsive }));
+        fs.writeFileSync(
+          p('generated.jsx'),
+          generateReact(ir, { assets: webAssets, responsive, tailwind, tokenNames: tokenSet.names })
+        );
         modules = generateComponentModules(ir);
         if (Object.keys(modules).length) {
           fs.mkdirSync(p('components'), { recursive: true });
@@ -333,7 +457,16 @@ server.registerTool(
 
       let nextApp_ = null;
       if (nextApp) {
-        nextApp_ = generateNext(ir, { assets, responsive, title: raw.name });
+        nextApp_ = generateNext(ir, {
+          assets: webAssets,
+          responsive,
+          title: raw.name,
+          tailwind,
+          tokenNames: tokenSet.names,
+          themeCss: tokenSet.files['tailwind.theme.css'],
+          externalAssets: !inlineAssets,
+        });
+        copyAssetFiles(assetFiles, p('assets'), p(path.join('next', 'public', 'assets')));
         // Everything under next/ so the directory is a project you can copy out
         // whole rather than pick files apart.
         for (const [rel, contents] of Object.entries(nextApp_.files)) {
@@ -375,7 +508,14 @@ server.registerTool(
             } files) — cd there, npm install && npm run dev`
           : null,
         ``,
-        `Assets: ${imageFills.length} image-fill + ${vectors.length} vector requested, ${embedded} embedded as data URIs.`,
+        inlineAssets
+          ? `Assets: ${imageFills.length} image-fill + ${vectors.length} vector requested, ${embedded} embedded as data URIs.`
+          : `Assets: ${imageFills.length} image-fill + ${vectors.length} vector requested, ${embedded} exported as ` +
+            `${assetFiles.length} file(s) in ${p('assets')}/ (${(assetBytes / 1024).toFixed(0)} KB)` +
+            `${nextApp_ ? ' and copied to next/public/assets/' : ''}. Pass inlineAssets=true for one self-contained file.`,
+        `Design tokens: ${tokenSet.counts.colors} colours, ${tokenSet.counts.fonts} fonts, ${tokenSet.counts.fontSizes} font sizes, ` +
+          `${tokenSet.counts.radii} radii, ${tokenSet.counts.spacing} spacing values → ${p('tokens.json')} (DTCG), tokens.css, tailwind.theme.css.`,
+        tailwind && (react || nextApp_) ? `Tailwind: React/Next.js output uses Tailwind v4 classes.` : null,
         `Tokens: ${tokenCount} Figma variables resolved${tokenCount === 0 ? ' (none — the Variables API is Enterprise-only, so colors are exact literals)' : ''}.`,
         `Components: ${Object.keys(componentMap).length} bound by name (prop bindings need Code Connect).`,
         mirrorUnknown
@@ -392,6 +532,7 @@ server.registerTool(
             `want real reflow rather than proportional scaling.`
           : null,
         cachedRaw ? `\n(Served from cache. Pass refresh=true to re-fetch.)` : null,
+        servedStale ? `\nSTALE CACHE: ${servedStale}` : null,
         problems.length
           ? `\nIR validation warnings (${problems.length}): ${problems.slice(0, 3).join('; ')}`
           : null,
@@ -401,21 +542,7 @@ server.registerTool(
 
       return text(lines.join('\n'));
     } catch (err) {
-      if (err.name === 'RateLimitError') {
-        return fail(
-          `figma_convert failed: ${err.message}\n\n` +
-            `Rate limit resets around ${err.resetAt.toLocaleString()}.\n` +
-            `Until then: any frame already in .figma-cache/ still works offline — ` +
-            `figma_verify and figma_inspect need no network at all.`
-        );
-      }
-      const m = String(err.message);
-      const hint = m.includes('403')
-        ? '\n→ The token lacks access to this file, or the file is not shared with that account.'
-        : m.includes('404')
-          ? '\n→ File key or node id not found. Check the URL points at a frame that still exists.'
-          : '';
-      return fail(`figma_convert failed: ${m}${hint}`);
+      return fail(await explainConvertFailure(err, url));
     }
   }
 );
@@ -444,6 +571,19 @@ server.registerTool(
         .string()
         .optional()
         .describe('HTML file to verify. Defaults to <dir>/generated.html.'),
+      url: z
+        .string()
+        .optional()
+        .describe(
+          'Verify a RUNNING page instead of the generated HTML — e.g. your own app at ' +
+            'http://localhost:3000/pricing, built in any framework. The page is screenshotted at the ' +
+            'frame size and pixel-diffed against the Figma reference. Element/layering checks need the ' +
+            "converter's data-ir-id markers, so for a URL only the pixel diff runs."
+        ),
+      selector: z
+        .string()
+        .optional()
+        .describe('With url: CSS selector of the element to compare (e.g. "#pricing-card"). Default: the viewport.'),
       threshold: z
         .number()
         .default(0.02)
@@ -469,15 +609,18 @@ server.registerTool(
         ),
     },
   },
-  async ({ dir, htmlPath, threshold, width, height, fullPage, includeImages }) => {
+  async ({ dir, htmlPath, url, selector, threshold, width, height, fullPage, includeImages }) => {
     try {
       const d = path.resolve(dir);
       const htmlFile = htmlPath ? path.resolve(htmlPath) : path.join(d, 'generated.html');
       const refFile = path.join(d, 'reference.png');
       const irFile = path.join(d, 'ir.json');
 
+      if (url && !/^https?:\/\//i.test(url)) {
+        return fail(`url must start with http:// or https:// (got ${url}). For a file, use htmlPath.`);
+      }
       for (const [label, f] of [
-        ['HTML', htmlFile],
+        ...(url ? [] : [['HTML', htmlFile]]),
         ['reference PNG', refFile],
       ]) {
         if (!fs.existsSync(f)) {
@@ -485,7 +628,7 @@ server.registerTool(
         }
       }
 
-      const html = fs.readFileSync(htmlFile, 'utf8');
+      const html = url ? '' : fs.readFileSync(htmlFile, 'utf8');
       const referencePng = fs.readFileSync(refFile);
       const ir = fs.existsSync(irFile) ? readJson(irFile) : null;
 
@@ -493,7 +636,14 @@ server.registerTool(
       // makes every element look misplaced and the diff meaningless.
       const vw = width ?? ir?.box?.width ?? 1440;
       const vh = height ?? ir?.box?.height ?? 900;
-      const renderOpts = { width: Math.round(vw), height: Math.round(vh), fullPage };
+      // Figma renders references at 2x — unless the frame is too big for its
+      // export limit, in which case it quietly sends a smaller image (a
+      // 1440x10490 frame came back at ~1.49x). Rendering at 2x against that
+      // makes every pixel "differ". Match the reference's actual scale.
+      const refW = referencePng.readUInt32BE(16); // PNG IHDR width
+      const scale = vw && refW ? refW / vw : 2;
+      const deviceScaleFactor = Math.abs(scale - 2) < 0.01 ? 2 : Math.round(scale * 1000) / 1000;
+      const renderOpts = { width: Math.round(vw), height: Math.round(vh), fullPage, deviceScaleFactor };
 
       // One render, both signals: screenshot + measured element boxes.
       let renderPng;
@@ -502,10 +652,17 @@ server.registerTool(
       let paintCorrection = '';
       let paintSummary = 'skipped (no ir.json)';
 
-      if (ir) {
+      if (url) {
+        renderPng = await renderUrl(url, { ...renderOpts, selector });
+        elementSummary = 'skipped (a URL has no data-ir-id markers; pixel diff only)';
+        paintSummary = 'skipped (URL mode)';
+      } else if (ir) {
         const expected = flattenExpectedBoxes(ir);
         const ids = expected.map((e) => e.id);
-        const { png, boxes, paint } = await renderHtmlWithBoxes(html, ids, ir.id, renderOpts);
+        const { png, boxes, paint } = await renderHtmlWithBoxes(html, ids, ir.id, {
+          ...renderOpts,
+          url: pathToFileURL(htmlFile).href,
+        });
         renderPng = png;
         const findings = computeElementDiffs(expected, boxes);
         elementCorrection = buildElementCorrection(findings, { rootId: ir.id });
@@ -523,7 +680,7 @@ server.registerTool(
             ? `${paintFindings.stacking.length} wrong stacking, ${paintFindings.clipping.length} over-clipped`
             : 'paint order and clipping match the design';
       } else {
-        renderPng = await renderHtml(html, renderOpts);
+        renderPng = await renderHtml(html, { ...renderOpts, url: pathToFileURL(htmlFile).href });
       }
 
       const diff = diffImages(renderPng, referencePng);
@@ -543,9 +700,11 @@ server.registerTool(
             : `NOT CONVERGED — ${pct(diff.diffRatio)} of pixels differ (threshold ${pct(threshold)}).`,
         `Elements: ${elementSummary}`,
         `Layering: ${paintSummary}`,
-        `Rendered at ${renderOpts.width}x${renderOpts.height}, compared at ${diff.width}x${diff.height} (2x).`,
+        `Rendered at ${renderOpts.width}x${renderOpts.height}, compared at ${diff.width}x${diff.height} (${deviceScaleFactor}x)` +
+          (deviceScaleFactor !== 2 ? ` — Figma downscaled this frame's reference (too large for a 2x export), so the render matches it.` : '.'),
         ``,
-        `  ${renderFile}  what your HTML looks like`,
+        url ? `Source: ${url}${selector ? ` → ${selector}` : ''}` : null,
+        `  ${renderFile}  what your ${url ? 'page' : 'HTML'} looks like`,
         `  ${diffFile}    highlighted = differs (read this image to see where)`,
         ``,
       ];
@@ -557,19 +716,19 @@ server.registerTool(
         if (elementCorrection) lines.push(elementCorrection, '');
         if (paintCorrection) lines.push(paintCorrection, '');
         lines.push(correction);
-        lines.push('', `Edit ${htmlFile} and call figma_verify again.`);
+        lines.push('', url ? `Fix the page at ${url} and call figma_verify again.` : `Edit ${htmlFile} and call figma_verify again.`);
       } else if (paintCorrection) {
         lines.push(
           `Pixel difference is at the anti-aliasing floor, but the layering is wrong:`,
           ''
         );
         lines.push(paintCorrection);
-        lines.push('', `Edit ${htmlFile} and call figma_verify again.`);
+        lines.push('', url ? `Fix the page at ${url} and call figma_verify again.` : `Edit ${htmlFile} and call figma_verify again.`);
       } else {
         lines.push(`Remaining difference is at the anti-aliasing floor. Nothing to fix.`);
       }
 
-      const result = text(lines.join('\n'));
+      const result = text(lines.filter((l) => l !== null).join('\n'));
 
       if (includeImages) {
         const img = (buf) => ({

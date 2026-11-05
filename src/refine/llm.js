@@ -6,8 +6,11 @@
 // and returns corrected code. The loop re-renders and repeats until it converges.
 //
 // Model + params:
-//   • claude-opus-4-8 (default; most capable Opus tier)
-//   • adaptive thinking (visual reasoning is non-trivial)
+//   • claude-opus-5-5 (default; the current Opus)
+//   • adaptive thinking at effort "high" (Opus 5.5 defaults to "medium";
+//     visual reasoning is non-trivial, so it is set explicitly)
+//   • server-side refusal fallback (fallbacks: "default"), so a policy decline
+//     is retried on another model inside the same call instead of failing
 //   • streaming with a large max_tokens (a full HTML document can be big)
 //
 // Auth: constructs a zero-arg Anthropic() client — it resolves ANTHROPIC_API_KEY,
@@ -42,7 +45,9 @@ function extractCode(message) {
  * Build a `generate` function for verifyLoop, backed by Claude.
  *
  * @param {Object} [options]
- * @param {string} [options.model='claude-opus-4-8']
+ * @param {string} [options.model='claude-opus-5-5']
+ * @param {'low'|'medium'|'high'|'xhigh'|'max'} [options.effort='high']
+ * @param {boolean} [options.fallbacks=true]  Server-side refusal fallback (Claude API only).
  * @param {number} [options.maxTokens=64000]
  * @param {string} [options.conventions]   Framework/style rules injected into the system prompt.
  * @param {Anthropic} [options.client]     Pre-constructed SDK client (else a zero-arg one).
@@ -50,8 +55,10 @@ function extractCode(message) {
  */
 export function createClaudeRefiner(options = {}) {
   const {
-    model = 'claude-opus-4-8',
+    model = 'claude-opus-5-5',
     maxTokens = 64000,
+    effort = 'high',
+    fallbacks = true,
     conventions = DEFAULT_CONVENTIONS,
     client = new Anthropic(),
   } = options;
@@ -87,13 +94,23 @@ export function createClaudeRefiner(options = {}) {
 
     // Stream (large max_tokens would otherwise risk an HTTP timeout); collect the
     // full message with the SDK helper.
-    const stream = client.messages.stream({
+    const params = {
       model,
       max_tokens: maxTokens,
       thinking: { type: 'adaptive' },
+      output_config: { effort },
       system,
       messages: [{ role: 'user', content }],
-    });
+    };
+    // The fallback rides on the beta namespace; without it a refused request
+    // simply stops. Pass fallbacks:false for Bedrock/Vertex/Foundry clients.
+    const stream = fallbacks
+      ? client.beta.messages.stream({
+          ...params,
+          betas: ['server-side-fallback-2026-07-01'],
+          fallbacks: 'default',
+        })
+      : client.messages.stream(params);
     const message = await stream.finalMessage();
 
     if (message.stop_reason === 'refusal') {

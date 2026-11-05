@@ -69,6 +69,25 @@ export class RateLimitError extends Error {
 }
 
 /**
+ * Thrown in fail-fast mode when Figma has the token in a cooldown and waiting it
+ * out would take minutes. Carries the remembered reset time (if any) so the
+ * caller can say WHEN, and fall back to cached data instead of hanging.
+ */
+export class FigmaBlockedError extends Error {
+  constructor(path, resetAt, cause) {
+    super(
+      `Figma refused ${path} (${cause?.message || 'blocked'}). ` +
+        (resetAt
+          ? `The /nodes budget is locked until ${new Date(resetAt).toISOString()}.`
+          : `The token is in Figma's cost-based cooldown.`)
+    );
+    this.name = 'FigmaBlockedError';
+    this.status = cause?.status;
+    this.resetAt = resetAt ? new Date(resetAt) : null;
+  }
+}
+
+/**
  * Depth-first search for a node id in a whole-file document tree.
  * Iterative — design files nest deeply enough to make recursion a gamble.
  *
@@ -105,6 +124,8 @@ export class FigmaRestSource {
     lockoutFile = LOCKOUT_FILE,
     recoveryTimeoutMs = RECOVERY_TIMEOUT_MS,
     cooldownQuietMs = COOLDOWN_QUIET_MS,
+    failFast = false,
+    fileTimeoutMs = 90_000,
   }) {
     if (!token) throw new Error('FigmaRestSource: token is required');
     if (!fileKey) throw new Error('FigmaRestSource: fileKey is required');
@@ -116,15 +137,32 @@ export class FigmaRestSource {
     this.lockoutFile = lockoutFile; // null disables cross-run memory (tests)
     this.recoveryTimeoutMs = recoveryTimeoutMs;
     this.cooldownQuietMs = cooldownQuietMs;
+    // failFast: never sleep through a cooldown — throw FigmaBlockedError so an
+    // interactive caller (the MCP server) can answer from cache in seconds
+    // instead of holding the agent for minutes.
+    this.failFast = failFast;
+    this.fileTimeoutMs = fileTimeoutMs;
     this._components = {}; // cached from the last getNode() call
     this._document = null; // whole-file tree, cached by the getNode() fallback
     this._fileComponents = {};
   }
 
-  async _getJson(path, attempt = 0) {
-    const res = await this.fetch(`${this.baseUrl}${path}`, {
-      headers: { 'X-Figma-Token': this.token },
-    });
+  async _getJson(path, attempt = 0, timeoutMs = 0) {
+    let res;
+    try {
+      res = await this.fetch(`${this.baseUrl}${path}`, {
+        headers: { 'X-Figma-Token': this.token },
+        ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+      });
+    } catch (err) {
+      if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+        const e = new Error(`Figma API ${path} → no complete answer within ${Math.round(timeoutMs / 1000)}s`);
+        e.status = 0;
+        e.timeout = true;
+        throw e;
+      }
+      throw err;
+    }
     if ((res.status === 429 || res.status >= 500) && attempt < 7) {
       const retryAfter = Number(res.headers?.get?.('retry-after'));
 
@@ -142,14 +180,41 @@ export class FigmaRestSource {
         ? retryAfter * 1000
         : Math.min(1000 * 2 ** attempt, this.maxRetryWaitMs);
       await new Promise((r) => setTimeout(r, waitMs));
-      return this._getJson(path, attempt + 1);
+      return this._getJson(path, attempt + 1, timeoutMs);
     }
     if (!res.ok) {
       const err = new Error(`Figma API ${path} → ${res.status} ${res.statusText || ''}`.trim());
       err.status = res.status;
       throw err;
     }
-    return res.json();
+    try {
+      return await res.json();
+    } catch (err) {
+      // A huge whole-file body can be cut off mid-download ("terminated").
+      const e = new Error(`Figma API ${path} → the response was cut off before it finished (${err.message})`);
+      e.status = 0;
+      e.truncated = true;
+      throw e;
+    }
+  }
+
+  /**
+   * Is the token itself valid? /v1/me is cheap and outside the file budgets, so
+   * it tells a dead token apart from a file Figma will not serve right now.
+   * @returns {Promise<{ok:boolean, status:number, handle?:string}>}
+   */
+  async checkToken() {
+    try {
+      const res = await this.fetch(`${this.baseUrl}/v1/me`, {
+        headers: { 'X-Figma-Token': this.token },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) return { ok: false, status: res.status };
+      const me = await res.json();
+      return { ok: true, status: res.status, handle: me.handle || me.email };
+    } catch {
+      return { ok: false, status: 0 };
+    }
   }
 
   /**
@@ -161,7 +226,11 @@ export class FigmaRestSource {
    */
   async _getDocument() {
     if (!this._document) {
-      const data = await this._getJson(`/v1/files/${this.fileKey}?geometry=paths`);
+      const data = await this._getJson(
+        `/v1/files/${this.fileKey}?geometry=paths`,
+        0,
+        this.failFast ? this.fileTimeoutMs : 0
+      );
       this._document = data.document;
       // File-wide components dict — a superset of what /nodes returns per entry.
       this._fileComponents = data.components || {};
@@ -217,6 +286,22 @@ export class FigmaRestSource {
    *   meaning we must serve the quiet period before the first attempt.
    */
   async _getDocumentResilient(afterBlock) {
+    if (this.failFast) {
+      // One attempt, no cooldown sleeps. If /nodes just poisoned the token the
+      // whole-file call would 403 too, so do not even try — report it.
+      if (afterBlock) {
+        throw new FigmaBlockedError(`/v1/files/${this.fileKey}`, this._readLockout()?.resetAt, {
+          message: '/nodes was just rate-limited, which puts the token in a cooldown',
+          status: 429,
+        });
+      }
+      try {
+        return await this._getDocument();
+      } catch (err) {
+        if (!FigmaRestSource._isBlocked(err)) throw err;
+        throw new FigmaBlockedError(`/v1/files/${this.fileKey}`, this._readLockout()?.resetAt, err);
+      }
+    }
     const deadline = Date.now() + this.recoveryTimeoutMs;
     if (afterBlock) {
       console.warn(

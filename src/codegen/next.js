@@ -45,11 +45,11 @@ const kebab = (name) =>
  * @returns {{files: Record<string,string>, componentName: string, entry: string, useClient: boolean}}
  */
 export function generateNext(ir, opts = {}) {
-  const { assets = {}, responsive = false, minScale = 0.5 } = opts;
+  const { assets = {}, responsive = false, minScale = 0.5, tailwind = false, tokenNames = {}, themeCss = '', externalAssets = false } = opts;
   const title = opts.title || ir.name || 'Generated';
   const name = opts.componentName || pascal(ir.name);
 
-  const component = generateReact(ir, { assets, responsive, minScale, componentName: name });
+  const component = generateReact(ir, { assets, responsive, minScale, componentName: name, tailwind, tokenNames });
 
   // The component file imports './components/<X>' for every Code Connect
   // binding. Those modules have to ship with it or `next dev` dies on the first
@@ -71,6 +71,10 @@ export function generateNext(ir, opts = {}) {
 
   const globals = [
     fontImports,
+    // Tailwind v4: one import, and the generated @theme so token classes
+    // (bg-c8960c, font-crimson-pro…) resolve.
+    tailwind ? '@import "tailwindcss";' : null,
+    tailwind && themeCss ? themeCss.trim() : null,
     fontImports ? '' : null,
     tokens.length ? `/* Design tokens to define in your theme: ${tokens.join(', ')} */` : null,
     RESET.replace(/\} /g, '}\n'),
@@ -115,16 +119,26 @@ export function generateNext(ir, opts = {}) {
           version: '0.1.0',
           scripts: { dev: 'next dev', build: 'next build', start: 'next start' },
           dependencies: { next: '^15.0.0', react: '^19.0.0', 'react-dom': '^19.0.0' },
+          ...(tailwind
+            ? { devDependencies: { tailwindcss: '^4.0.0', '@tailwindcss/postcss': '^4.0.0', postcss: '^8.4.0' } }
+            : {}),
         },
         null,
         2
       ) + '\n',
 
+    ...(tailwind
+      ? { 'postcss.config.mjs': `export default {\n  plugins: { '@tailwindcss/postcss': {} },\n};\n` }
+      : {}),
+
     'next.config.mjs':
       `/** @type {import('next').NextConfig} */\n` +
-      `// Every image and vector is inlined as a data URI by the converter, so\n` +
-      `// there is nothing here for next/image to optimise and no remote host to\n` +
-      `// allow-list. The project runs offline exactly as exported.\n` +
+      (externalAssets
+        ? `// Images and vectors are plain files in public/assets/, referenced as\n` +
+          `// /assets/<hash>.<ext>. No remote host is involved, so nothing to allow-list.\n`
+        : `// Every image and vector is inlined as a data URI by the converter, so\n` +
+          `// there is nothing here for next/image to optimise and no remote host to\n` +
+          `// allow-list. The project runs offline exactly as exported.\n`) +
       `const nextConfig = {};\n\n` +
       `export default nextConfig;\n`,
 
@@ -133,7 +147,10 @@ export function generateNext(ir, opts = {}) {
       `Figma frame converted to a Next.js project.\n\n` +
       '```bash\nnpm install\nnpm run dev\n```\n\n' +
       `\`app/${name}.jsx\` is the component — the same file the React option emits.\n` +
-      `Images and vectors are inlined as data URIs, so it renders with no network.\n` +
+      (externalAssets
+        ? `Images and vectors are files in \`public/assets/\`; it renders with no network.\n`
+        : `Images and vectors are inlined as data URIs, so it renders with no network.\n`) +
+      (tailwind ? `Styled with Tailwind v4 classes; the design's tokens are in the @theme block in \`app/globals.css\`.\n` : '') +
       (Object.keys(modules).length
         ? `\n\`app/components/\` holds one file per Code Connect binding ` +
           `(${Object.keys(modules).length}), generated from each instance's own content. ` +

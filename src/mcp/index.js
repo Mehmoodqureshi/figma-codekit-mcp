@@ -14,7 +14,7 @@
 //   const html = generateHtml(ir);
 //   const out  = await verifyLoop({ initialCode: html, referencePng, generate });
 
-export { FigmaRestSource, RateLimitError } from './source.js';
+export { FigmaRestSource, RateLimitError, FigmaBlockedError } from './source.js';
 export { FigmaMcpSource, extractImageBuffer } from './mcpSource.js';
 export { loadFrame, loadFromUrl } from './loadFrame.js';
 export { collectAssetIds, exportAssets } from './assets.js';

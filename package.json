@@ -1,8 +1,8 @@
 {
   "name": "figma-codekit-mcp",
   "mcpName": "io.github.Mehmoodqureshi/figma-codekit-mcp",
-  "version": "0.2.4",
-  "description": "Figma to pixel-perfect code, as an MCP server. Converts a frame to self-contained HTML deterministically, then closes the loop: renders your code in Chromium, pixel-diffs it against the Figma reference, and tells the agent exactly which elements are missing or misplaced.",
+  "version": "0.3.0",
+  "description": "Figma to pixel-verified code, as an MCP server. Deterministic Figma frame → HTML / React / Next.js (optionally Tailwind) with design tokens and image files, then renders it in Chromium and pixel-diffs it against the Figma reference — or verifies your own running app — until it converges.",
   "author": "Mehmood Ur Rehman Qureshi",
   "license": "MIT",
   "homepage": "https://github.com/Mehmoodqureshi/figma-codekit-mcp#readme",
@@ -49,7 +49,15 @@
     "playwright",
     "ai-agent",
     "claude",
-    "claude-code"
+    "claude-code",
+    "design-qa",
+    "pixel-diff",
+    "verify",
+    "tailwind",
+    "design-tokens",
+    "dtcg",
+    "nextjs",
+    "cursor"
   ],
   "scripts": {
     "serve": "node src/mcp/server.js",
@@ -68,12 +76,12 @@
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.68.0",
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "pixelmatch": "^6.0.0",
-    "playwright": "^1.48.0",
+    "playwright": "^1.65.0",
     "pngjs": "^7.0.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=20"

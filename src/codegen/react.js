@@ -9,6 +9,7 @@
 
 import { ROLES, LAYOUT } from '../ir/schema.js';
 import { cssDeclarations } from './cssgen.js';
+import { toTailwind } from './tailwind.js';
 
 // 1x1 transparent PNG, so an <img> whose asset never exported still lays out
 // cleanly instead of showing a broken-image glyph. Same value as html.js.
@@ -35,6 +36,22 @@ function styleLiteral(node, ctx, extra = null) {
     for (const [k, v] of Object.entries(extra)) entries.push(`${k}: ${JSON.stringify(v)}`);
   }
   return `{ ${entries.join(', ')} }`;
+}
+
+/**
+ * The styling attribute(s) for an element: an inline style object by default,
+ * or Tailwind classes (plus a leftover style for anything a class cannot carry)
+ * when ctx.tailwind is set.
+ */
+function styleAttrs(node, ctx, extra = null) {
+  if (!ctx.tailwind) return `style={${styleLiteral(node, ctx, extra)}}`;
+  const d = { ...cssDeclarations(node, ctx) };
+  if (extra) for (const [k, v] of Object.entries(extra)) d[k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())] = v;
+  const { className, style } = toTailwind(d, ctx.tokenNames);
+  const rest = Object.entries(style).map(([k, v]) => `${kebabToCamel(k)}: ${JSON.stringify(v)}`);
+  // An expression container, not a string attribute: JSX string attributes have
+  // no escape sequences, so a class holding a quote would not parse.
+  return `className={${JSON.stringify(className)}}${rest.length ? ` style={{ ${rest.join(', ')} }}` : ''}`;
 }
 
 /** props object → JSX attribute string. */
@@ -102,8 +119,14 @@ function textChildren(text) {
 
 function emit(node, indent, usedComponents, ctx) {
   const pad = '  '.repeat(indent);
-  const style = `style={${styleLiteral(node, ctx)}}`;
-  const childCtx = { responsive: ctx.responsive, parentLayout: node.layout, assets: ctx.assets };
+  const style = styleAttrs(node, ctx);
+  const childCtx = {
+    responsive: ctx.responsive,
+    parentLayout: node.layout,
+    assets: ctx.assets,
+    tailwind: ctx.tailwind,
+    tokenNames: ctx.tokenNames,
+  };
 
   switch (node.role) {
     case ROLES.TEXT: {
@@ -119,13 +142,13 @@ function emit(node, indent, usedComponents, ctx) {
         return `${pad}<div ${style} role="img" aria-label=${JSON.stringify(node.name)} />`;
       }
       const fit = node.style.imageFit?.fit === 'contain' ? 'contain' : 'cover';
-      const imgStyle = `style={${styleLiteral(node, ctx, { objectFit: fit })}}`;
+      const imgStyle = styleAttrs(node, ctx, { objectFit: fit });
       return `${pad}<img ${imgStyle} src={${JSON.stringify(asset || IMG_PLACEHOLDER)}} alt=${JSON.stringify(node.name)} />`;
     }
     case ROLES.VECTOR: {
       const asset = ctx.assets?.[node.id];
       if (asset) {
-        const vecStyle = `style={${styleLiteral(node, ctx, { objectFit: 'contain' })}}`;
+        const vecStyle = styleAttrs(node, ctx, { objectFit: 'contain' });
         return `${pad}<img ${vecStyle} src={${JSON.stringify(asset)}} alt=${JSON.stringify(node.name)} />`;
       }
       // No export: a faint dashed outline shows up as a difference without
@@ -141,7 +164,8 @@ function emit(node, indent, usedComponents, ctx) {
       // as the HTML emitter keeps it.
       if (!usedComponents.has(node.component.name)) usedComponents.set(node.component.name, node);
       const attrs = propsToJsx(node.component.props);
-      const open = `${pad}<${node.component.name} ${style}${attrs ? ' ' + attrs : ''}`;
+      const compStyle = `style={${styleLiteral(node, ctx)}}`;
+      const open = `${pad}<${node.component.name} ${compStyle}${attrs ? ' ' + attrs : ''}`;
       if (!node.children || node.children.length === 0) return `${open} />`;
       const inner = node.children.map((c) => emit(c, indent + 1, usedComponents, childCtx)).join('\n');
       return `${open}>\n${inner}\n${pad}</${node.component.name}>`;
@@ -174,6 +198,8 @@ export function generateReact(ir, opts = {}) {
     responsive: canvasFit ? false : opts.responsive || false,
     parentLayout: null,
     assets: opts.assets || {},
+    tailwind: Boolean(opts.tailwind),
+    tokenNames: opts.tokenNames || {},
   });
 
   const imports = [...usedComponents.keys()]

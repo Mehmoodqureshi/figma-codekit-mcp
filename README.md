@@ -1,8 +1,9 @@
 # figma-codekit-mcp
 
-Upgrading from an earlier package name: replace the package in your MCP client command with `npx -y figma-codekit-mcp@latest`. Existing environment settings and saved data remain compatible.
-
-**Figma → code that is actually checked against the design.**
+**Figma → code that is actually checked against the design.** The pixel-diff
+verifier for Figma-to-code: it renders the output and diffs it against the frame
+until it converges — and it can verify *your own running app* the same way, so it
+works alongside Figma's official MCP server or Framelink rather than replacing them.
 
 Most Figma-to-code tools stop at the moment of generation: they hand you JSX and
 walk away. Nobody ever renders the output and compares it to the frame, so the
@@ -64,8 +65,8 @@ parent. The only way to know is to render it and look.
 
 | Tool | What it does | Network |
 |---|---|---|
-| `figma_convert` | Fetch a frame → self-contained HTML + `ir.json` + assets as data URIs + `reference.png`. Optional `react: true` (component + the `components/` it imports) and `next: true` (a runnable App Router project), plus a responsive variant. | Figma API (cached) |
-| `figma_verify` | Render HTML in Chromium, pixel-diff vs the reference, IoU-check every element, check paint order and clipping, return targeted fix instructions. | none |
+| `figma_convert` | Fetch a frame → HTML + `ir.json` + images as files in `assets/` (or data URIs with `inlineAssets: true`) + `reference.png` + design tokens (`tokens.json` in W3C DTCG format, `tokens.css`, a Tailwind v4 `tailwind.theme.css`). Optional `react: true` (component + the `components/` it imports), `next: true` (a runnable App Router project) and `tailwind: true` (React/Next.js output as Tailwind classes), plus a responsive variant. | Figma API (cached) |
+| `figma_verify` | Render HTML in Chromium, pixel-diff vs the reference, IoU-check every element, check paint order and clipping, return targeted fix instructions. Pass `url` (and optionally `selector`) to verify a **running page instead** — your own app at `http://localhost:3000`, in any framework — against the frame. | none (or your dev server) |
 | `figma_inspect` | Print the IR as an indented outline (role, box, layout, text, tokens), filterable — read the structure without dumping raw Figma JSON into context. | none |
 
 ### Responsive output depends on what the design actually declares
@@ -195,15 +196,39 @@ converts cleanly before pointing an agent at it — and for showing someone what
 | `FIGMA_MCP_SKIP_BROWSER_DOWNLOAD=1` | Skip the Chromium download on install. `figma_convert` and `figma_inspect` still work; `figma_verify` will not. |
 
 See [`.env.example`](.env.example). Add `.figma-cache/` to your project's
-`.gitignore` — a cached frame with embedded assets is tens of megabytes.
+`.gitignore` — a cached frame keeps the original bitmaps and can be tens of megabytes.
+
+`FIGMA_FILE_TIMEOUT_MS` (default `90000`) caps how long `figma_convert` waits for
+Figma's whole-file download, which it falls back to when the per-node endpoint is
+rate-limited. When Figma will not answer, the tool says so within that time and,
+if the frame is already cached anywhere, builds from the cached copy and marks the
+result **STALE CACHE** instead of hanging.
+
+### Verify your own app, not just the generated HTML
+
+```text
+figma_convert  url=<frame link>                      → .figma-cache/<frame>/ (reference.png)
+figma_verify   dir=<that dir>  url=http://localhost:3000/pricing  selector="#plans"
+```
+
+Build the page however you like — Figma's official MCP server, Framelink, by hand —
+then point `figma_verify` at it. It screenshots the page (or just the selected
+element) at the frame's size and pixel-diffs it against Figma. Element-box and
+layering checks need the converter's `data-ir-id` markers, so for a URL only the
+pixel diff runs.
 
 ## What it does not do
 
 Being straight about the edges, because they are Figma's, not bugs:
 
-- **Design tokens resolve to literals unless you are on Enterprise.** The Figma
-  Variables REST API is Enterprise-only. Without it, colors and spacing come out
-  as exact values rather than `var(--color-surface)`. Everything else works.
+- **Token names are derived, not designed, unless you are on Enterprise.** The
+  Figma Variables REST API is Enterprise-only. Without it the converter still
+  collects every colour, font, size and spacing value into `tokens.json` /
+  `tokens.css` / `tailwind.theme.css`, but names them after the value
+  (`--color-c8960c`) because it cannot know intent. Rename them in your theme.
+- **Figma rate-limits by cost.** A very large file fetched repeatedly can lock a
+  token out for hours (free accounts hit this sooner). Cached frames keep working
+  offline; `figma_convert` tells you when the limit lifts.
 - **Component *prop* bindings need Code Connect.** Components are matched by name
   and reported, but the API does not expose which instance prop drove which
   value.
@@ -264,6 +289,10 @@ npm run serve        # run the MCP server on stdio
 `loadFrame → figmaToIR → generateHtml` chain against a mocked Figma REST API,
 including rate-limit handling and rotation/mirror transforms. No token, no
 network, no browser, so it runs in CI on every push.
+
+## Upgrading from an earlier package name
+
+Replace the package in your MCP client command with `npx -y figma-codekit-mcp@latest`. Existing environment settings and saved data remain compatible.
 
 ## Related
 

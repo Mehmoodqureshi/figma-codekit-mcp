@@ -39,6 +39,8 @@ export const LAYOUT = Object.freeze({
  * @property {'flex'|'grid'|'absolute'|'block'} mode
  * @property {'row'|'column'} [direction]        Flex only.
  * @property {number} [gap]                       Flex gap (px) — from itemSpacing.
+ * @property {number} [counterGap]                Wrapped flex: spacing between tracks (counterAxisSpacing).
+ * @property {'space-between'} [alignContent]     Wrapped flex: counterAxisAlignContent.
  * @property {string} [columns]                   Grid: CSS grid-template-columns.
  * @property {string} [rows]                      Grid: CSS grid-template-rows.
  * @property {number} [columnGap]                 Grid: gridColumnGap (px).
