@@ -61,6 +61,7 @@
   ],
   "scripts": {
     "serve": "node src/mcp/server.js",
+    "build": "node --check src/mcp/server.js && node --check src/mcp/source.js && node --check src/codegen/index.js",
     "site": "node site/server.js",
     "site:open": "node site/server.js --open",
     "test": "node example/mcp-adapter-test.js && node example/doctor-test.js",
