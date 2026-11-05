@@ -25,7 +25,7 @@ jobs:
       # renders. postinstall skips the download on CI anyway; this is belt-and-braces.
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
